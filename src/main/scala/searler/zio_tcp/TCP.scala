@@ -66,9 +66,8 @@ object TCP {
 
     /**
      * Read the entire `AsynchronousSocketChannel` by emitting a `Chunk[Byte]`
-     * The caller of this function is NOT responsible for closing the `AsynchronousSocketChannel`.
      */
-    def read: Stream[Throwable, Byte] =
+    val  read: Stream[Throwable, Byte] =
       ZStream.unfoldChunkM(0) {
         case -1 => ZIO.succeed(Option.empty)
         case _ =>
@@ -98,7 +97,7 @@ object TCP {
      *
      * The sink will yield the count of bytes written.
      */
-    def write: Sink[Throwable, Byte, Nothing, Int] =
+    val write: Sink[Throwable, Byte, Nothing, Int] =
       ZSink.foldLeftChunksM(0) {
         case (nbBytesWritten, c) => {
           val buffer = ByteBuffer.wrap(c.toArray)
