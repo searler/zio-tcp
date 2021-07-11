@@ -1,10 +1,12 @@
 package searler.zio_tcp
 
+import searler.zio_tcp.TCP._
 import zio.blocking.Blocking
+import zio.duration._
 import zio.stream.{Stream, Transducer, ZSink, ZStream, ZTransducer}
-import TCP._
 import zio.test.Assertion.equalTo
-import zio.test.{DefaultRunnableSpec, Gen, ZSpec, assert}
+import zio.test.environment.Live
+import zio.test.{DefaultRunnableSpec, Gen, TestAspect, TestAspectAtLeastR, TestPlatform, ZSpec, assert}
 import zio.{Chunk, Hub, Promise, Queue, Ref, Schedule, ZHub, ZIO}
 
 import java.net.{InetSocketAddress, SocketAddress}
@@ -14,6 +16,9 @@ import scala.util.Try
  * Contains interesting examples of how the API can be applied
  */
 object TCPSpec extends DefaultRunnableSpec {
+
+  override def aspects: List[TestAspectAtLeastR[Live]] =    List(TestAspect.timeout(4.seconds))
+
 
   def spec: ZSpec[Environment, Failure] = suite("ZStream JVM")(
     suite("socket")(
@@ -53,9 +58,7 @@ object TCPSpec extends DefaultRunnableSpec {
         } yield assert(receive)(equalTo(message))
       },
       testM("Server ignores the request, using fixed response") {
-
         for {
-
           server <-
             runServer(
               6877,
@@ -83,7 +86,7 @@ object TCPSpec extends DefaultRunnableSpec {
           _ <- server.interrupt
         } yield assert(receive)(equalTo("123456789"))
       },
-      testM("Independent processing of request and response ") {
+      testM("Independent processing of request and response using bidi") {
         val message = "012345678"
         val command = "request"
         for {
@@ -98,6 +101,30 @@ object TCPSpec extends DefaultRunnableSpec {
           )
 
           response <- requestChunk(8889, command)
+
+          contents <- queue.takeAll
+          request = new String(Chunk.fromIterable(contents).toArray)
+
+          _ <- server.interrupt
+        } yield assert(response)(equalTo(message)) && assert(request)(equalTo(command))
+
+      },
+      testM("Independent processing of request and response using bidiServer") {
+        val message = "012345678"
+        val command = "request"
+        for {
+          queue <- Queue.unbounded[Byte]
+
+          server <- runServer(
+            8899,
+            TCP.bidiServer(addr => (
+             _.run(ZSink.fromQueue(queue)).debug,
+              down => ZStream.fromIterable(message.getBytes).run(down).unit
+            )
+            )
+          )
+
+          response <- requestChunk(8899, command)
 
           contents <- queue.takeAll
           request = new String(Chunk.fromIterable(contents).toArray)

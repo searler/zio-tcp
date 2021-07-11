@@ -14,11 +14,11 @@ object TCP {
 
   /**
    * Create a stream of accepted connection from server socket
-   * Emit socket `Connection` from which you can read / write and ensure it is closed after it is used
+   * Emit socket `Channel` from which you can read / write and ensure it is closed after it is used
    */
   def fromSocketServer(
-                        port: Int,
-                        host: Option[String] = None
+                       port: Int,
+                       host: Option[String] = None
                       ): ZStream[Blocking, Throwable, Channel] =
     for {
       server <- ZStream.managed(ZManaged.fromAutoCloseable(effectBlocking {
@@ -51,14 +51,14 @@ object TCP {
   class Channel(socket: AsynchronousSocketChannel) {
 
     /**
-     * The remote address, i.e. the connected client
+     * The remote address
      */
     def remoteAddress: IO[IOException, SocketAddress] = IO
       .effect(socket.getRemoteAddress)
       .refineToOrDie[IOException]
 
     /**
-     * The local address, i.e. our server
+     * The local address
      */
     def localAddress: IO[IOException, SocketAddress] = IO
       .effect(socket.getLocalAddress)
@@ -67,7 +67,7 @@ object TCP {
     /**
      * Read the entire `AsynchronousSocketChannel` by emitting a `Chunk[Byte]`
      */
-    val  read: Stream[Throwable, Byte] =
+    val read: Stream[Throwable, Byte] =
       ZStream.unfoldChunkM(0) {
         case -1 => ZIO.succeed(Option.empty)
         case _ =>
@@ -208,10 +208,11 @@ object TCP {
                           Stream[Throwable, Byte] => ZIO[Any, Throwable, Unit],
                             Sink[Throwable, Byte, Throwable, Int] => ZIO[Any, Throwable, Unit]
                           )
-                      )(c: Channel): Any = for {
+                      )(c: Channel): ZIO[Any, Throwable, Unit] = for {
     remote <- c.remoteAddress
     (up, down) = f(remote)
-  } yield bidi(up, down)(c)
+    result <- bidi(up, down)(c)
+  } yield result
 
   // --- client or server
 
