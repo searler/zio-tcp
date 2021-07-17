@@ -1,7 +1,7 @@
 package searler.zio_tcp
 
 import searler.zio_tcp.TCP._
-import zio.blocking.Blocking
+import zio.blocking.{Blocking, effectBlockingIO}
 import zio.duration._
 import zio.stream.{Stream, Transducer, ZSink, ZStream, ZTransducer}
 import zio.test.Assertion.equalTo
@@ -23,7 +23,36 @@ object TCPSpec extends DefaultRunnableSpec {
   def spec: ZSpec[Environment, Failure] = suite("ZStream JVM")(
     suite("socket")(
 
+      testM(" server socketAddress") {
+        val message = "XABCDEFGHIJKMNOP"
+        for {
+          address <- effectBlockingIO(new InetSocketAddress("localhost", 8873))
+          _ <- runServer(address, TCP.handlerServer(_ => Predef.identity))
 
+          receive <- requestChunk(8874, message)
+        } yield assert(receive)(equalTo(message))
+
+      },
+      testM(" bind client 127.0.0.1") {
+        val message = "XABCDEFGHIJKMNOP"
+        for {
+          //echo
+          _ <- runServer(8875, TCP.handlerServer(_ => Predef.identity))
+
+          receive <- requestChunk(8875, message,bind=Some("127.0.0.1"))
+        } yield assert(receive)(equalTo(message))
+
+      },
+      testM(" bind client localhost") {
+        val message = "XABCDEFGHIJKMNOP"
+        for {
+          //echo
+          _ <- runServer(8874, TCP.handlerServer(_ => Predef.identity))
+
+          receive <- requestChunk(8874, message,bind=Some("localhost"))
+        } yield assert(receive)(equalTo(message))
+
+      },
       testM("write large") {
         val message = "XABCDEFGHIJKMNOP" * 180000
         for {
@@ -117,7 +146,7 @@ object TCPSpec extends DefaultRunnableSpec {
 
           server <- runServer(
             8899,
-            TCP.bidiServer(addr => (
+            TCP.bidiServer(_ => (
              _.run(ZSink.fromQueue(queue)).debug,
               down => ZStream.fromIterable(message.getBytes).run(down).unit
             )
@@ -224,8 +253,16 @@ object TCPSpec extends DefaultRunnableSpec {
       .runDrain
       .fork
 
-  private final def requestChunk(port: Int, request: String) = for {
-    conn <- TCP.fromSocketClient(port, "localhost").retry(Schedule.forever)
+  private final def requestChunk(port: Int, request: String, bind:Option[String] = None) = for {
+    conn <- TCP.fromSocketClient(port, "localhost", bind).retry(Schedule.forever)
     receive <- TCP.requestChunk(Chunk.fromArray(request.getBytes()))(conn)
   } yield new String(receive.toArray)
+
+  private final def runServer(address: SocketAddress, f: Channel => ZIO[Blocking, Throwable, Unit]) =
+    TCP
+      .fromSocketServer(address)
+      .mapMParUnordered(4)(f)
+      .runDrain
+      .fork
+
 }

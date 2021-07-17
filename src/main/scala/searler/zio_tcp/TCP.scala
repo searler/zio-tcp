@@ -16,17 +16,25 @@ object TCP {
    * Create a stream of accepted connection from server socket
    * Emit socket `Channel` from which you can read / write and ensure it is closed after it is used
    */
+
   def fromSocketServer(
-                       port: Int,
-                       host: Option[String] = None
-                      ): ZStream[Blocking, Throwable, Channel] =
+                        port: Int,
+                        host: Option[String] = None
+                      ): ZStream[Blocking, Throwable, Channel] = create(host.fold(new InetSocketAddress(port))(new InetSocketAddress(_, port)))
+
+  def fromSocketServer(
+                        address: SocketAddress
+                      ): ZStream[Blocking, Throwable, Channel] = create(address)
+
+  private def create(
+                      address: => SocketAddress
+                    ): ZStream[Blocking, Throwable, Channel] =
     for {
+
       server <- ZStream.managed(ZManaged.fromAutoCloseable(effectBlocking {
         AsynchronousServerSocketChannel
           .open()
-          .bind(
-            host.fold(new InetSocketAddress(port))(new InetSocketAddress(_, port))
-          )
+          .bind(address)
       }))
 
       conn <- ZStream.repeatEffect {
@@ -142,15 +150,25 @@ object TCP {
    */
   final def fromSocketClient(
                               port: Int,
-                              host: String
+                              host: String,
+                              bind: Option[String] = None
+                            ): ZIO[Blocking, Throwable, Channel] = for {
+    address <- effectBlockingIO(new InetSocketAddress(host, port))
+    bound <- effectBlockingIO(bind.map(h => new InetSocketAddress(h, 0)))
+    conn <- fromSocketClient(address, bound)
+  } yield conn
+
+  final def fromSocketClient(
+                              address: SocketAddress,
+                              bind: Option[SocketAddress]
                             ): ZIO[Blocking, Throwable, Channel] =
     for {
-      socket <- effectBlockingIO(AsynchronousSocketChannel.open())
+      socket <- effectBlockingIO(AsynchronousSocketChannel.open().bind(bind.getOrElse(null)))
 
       conn <-
         IO.effectAsync[Throwable, Channel] { callback =>
           socket.connect(
-            new InetSocketAddress(host, port),
+            address,
             socket,
             new CompletionHandler[Void, AsynchronousSocketChannel]() {
               self =>
