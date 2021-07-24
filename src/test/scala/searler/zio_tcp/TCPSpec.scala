@@ -6,9 +6,10 @@ import zio.duration._
 import zio.stream.{Stream, Transducer, ZSink, ZStream, ZTransducer}
 import zio.test.Assertion.equalTo
 import zio.test.environment.Live
-import zio.test.{DefaultRunnableSpec, Gen, TestAspect, TestAspectAtLeastR, TestPlatform, ZSpec, assert}
+import zio.test._
 import zio.{Chunk, Hub, Promise, Queue, Ref, Schedule, ZHub, ZIO}
 
+import java.io.IOException
 import java.net.{InetSocketAddress, SocketAddress}
 import scala.util.Try
 
@@ -17,7 +18,7 @@ import scala.util.Try
  */
 object TCPSpec extends DefaultRunnableSpec {
 
-  override def aspects: List[TestAspectAtLeastR[Live]] =    List(TestAspect.timeout(4.seconds))
+  override def aspects: List[TestAspectAtLeastR[Live]] = List(TestAspect.timeout(4.seconds))
 
 
   def spec: ZSpec[Environment, Failure] = suite("ZStream JVM")(
@@ -39,7 +40,7 @@ object TCPSpec extends DefaultRunnableSpec {
           //echo
           _ <- runServer(8875, TCP.handlerServer(_ => Predef.identity))
 
-          receive <- requestChunk(8875, message,bind=Some("127.0.0.1"))
+          receive <- requestChunk(8875, message, bind = Some("127.0.0.1"))
         } yield assert(receive)(equalTo(message))
 
       },
@@ -49,7 +50,7 @@ object TCPSpec extends DefaultRunnableSpec {
           //echo
           _ <- runServer(8874, TCP.handlerServer(_ => Predef.identity))
 
-          receive <- requestChunk(8874, message,bind=Some("localhost"))
+          receive <- requestChunk(8874, message, bind = Some("localhost"))
         } yield assert(receive)(equalTo(message))
 
       },
@@ -147,7 +148,7 @@ object TCPSpec extends DefaultRunnableSpec {
           server <- runServer(
             8899,
             TCP.bidiServer(_ => (
-             _.run(ZSink.fromQueue(queue)).debug,
+              _.run(ZSink.fromQueue(queue)).debug,
               down => ZStream.fromIterable(message.getBytes).run(down).unit
             )
             )
@@ -163,7 +164,7 @@ object TCPSpec extends DefaultRunnableSpec {
 
       },
       testM("Server maintains running count, incremented by client requests") {
-        def incrementer(state: Ref[Int]): SocketAddress => Stream[Throwable, Byte] => Stream[Throwable, Byte] = { _ =>
+        def incrementer(state: Ref[Int]): SocketAddress => Stream[IOException, Byte] => Stream[IOException, Byte] = { _ =>
           _.transduce(ZTransducer.utf8Decode)
             .transduce(ZTransducer.splitLines)
             .map(s => Try(s.toInt).getOrElse(0))
@@ -197,7 +198,7 @@ object TCPSpec extends DefaultRunnableSpec {
        * Note this test uses Gen within the test to generate test messages
        */
       testM("Record client connectivity with all interactions delivered via Hub subscriber") {
-        def chat(hub: Hub[String])(addr: SocketAddress)(in: Stream[Throwable, Byte]) = {
+        def chat(hub: Hub[String])(addr: SocketAddress)(in: Stream[IOException, Byte]) = {
           def notify(tag: String) = ZStream((s"$tag ${addr.asInstanceOf[InetSocketAddress].getPort}\n"))
 
           Stream
@@ -246,21 +247,21 @@ object TCPSpec extends DefaultRunnableSpec {
   /**
    * Note mapMParUnordered is appropriate since each client connection is independent and has different lifetimes
    */
-  private final def runServer(port: Int, f: Channel => ZIO[Blocking, Throwable, Unit]) =
+  private final def runServer(port: Int, f: Channel => ZIO[Blocking, IOException, Unit]) =
     TCP
-      .fromSocketServer(port)
+      .fromSocketServer(port, noDelay = true)
       .mapMParUnordered(4)(f)
       .runDrain
       .fork
 
-  private final def requestChunk(port: Int, request: String, bind:Option[String] = None) = for {
-    conn <- TCP.fromSocketClient(port, "localhost", bind).retry(Schedule.forever)
+  private final def requestChunk(port: Int, request: String, bind: Option[String] = None) = for {
+    conn <- TCP.fromSocketClient(port, "localhost", bind, true).retry(Schedule.forever)
     receive <- TCP.requestChunk(Chunk.fromArray(request.getBytes()))(conn)
   } yield new String(receive.toArray)
 
-  private final def runServer(address: SocketAddress, f: Channel => ZIO[Blocking, Throwable, Unit]) =
+  private final def runServer(address: SocketAddress, f: Channel => ZIO[Blocking, IOException, Unit]) =
     TCP
-      .fromSocketServer(address)
+      .fromSocketAddressServer(address, true)
       .mapMParUnordered(4)(f)
       .runDrain
       .fork

@@ -6,7 +6,7 @@ scalaVersion := "2.13.1"
 
 name := "zio-tcp"
 organization := "searler"
-version := "0.2"
+version := "0.3"
 
 
 

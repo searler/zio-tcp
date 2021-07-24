@@ -5,9 +5,10 @@ import zio.stream.{Sink, Stream, ZSink, ZStream}
 import zio.{Chunk, IO, UIO, ZIO, ZManaged}
 
 import java.io.IOException
-import java.net.{InetSocketAddress, SocketAddress}
+import java.net.{InetSocketAddress, SocketAddress, StandardSocketOptions}
 import java.nio.channels.{AsynchronousServerSocketChannel, AsynchronousSocketChannel, ClosedChannelException, CompletionHandler}
 import java.nio.{Buffer, ByteBuffer}
+import scala.util.Try
 
 object TCP {
 
@@ -19,17 +20,20 @@ object TCP {
 
   def fromSocketServer(
                         port: Int,
-                        host: Option[String] = None
-                      ): ZStream[Blocking, Throwable, Channel] = create(host.fold(new InetSocketAddress(port))(new InetSocketAddress(_, port)))
+                        host: Option[String] = None,
+                        noDelay: Boolean = false
+                      ): ZStream[Blocking, IOException, Channel] = create(host.fold(new InetSocketAddress(port))(new InetSocketAddress(_, port)), noDelay)
 
-  def fromSocketServer(
-                        address: SocketAddress
-                      ): ZStream[Blocking, Throwable, Channel] = create(address)
+  def fromSocketAddressServer(
+                               address: SocketAddress,
+                               noDelay: Boolean = false
+                             ): ZStream[Blocking, IOException, Channel] = create(address, noDelay)
 
   private def create(
-                      address: => SocketAddress
-                    ): ZStream[Blocking, Throwable, Channel] =
-    for {
+                      address: => SocketAddress,
+                      noDelay: Boolean
+                    ): ZStream[Blocking, IOException, Channel] =
+    (for {
 
       server <- ZStream.managed(ZManaged.fromAutoCloseable(effectBlocking {
         AsynchronousServerSocketChannel
@@ -38,20 +42,20 @@ object TCP {
       }))
 
       conn <- ZStream.repeatEffect {
-        IO.effectAsync[Throwable, Channel] { callback =>
+        IO.effectAsync[IOException, Channel] { callback =>
           server.accept(
             null,
             new CompletionHandler[AsynchronousSocketChannel, Void]() {
               self =>
               override def completed(socket: AsynchronousSocketChannel, attachment: Void): Unit =
-                callback(ZIO.succeed(new Channel(socket)))
+                callback(ZIO.succeed(new Channel(socket.setOption(StandardSocketOptions.TCP_NODELAY, noDelay.asInstanceOf[java.lang.Boolean]))))
 
-              override def failed(exc: Throwable, attachment: Void): Unit = callback(ZIO.fail(exc))
+              override def failed(exc: Throwable, attachment: Void): Unit = callback(ZIO.fail(exc).refineToOrDie[IOException])
             }
           )
         }
       }
-    } yield conn
+    } yield conn).refineToOrDie[IOException]
 
   /**
    * Accepted connection made to a specific channel `AsynchronousServerSocketChannel`
@@ -75,13 +79,13 @@ object TCP {
     /**
      * Read the entire `AsynchronousSocketChannel` by emitting a `Chunk[Byte]`
      */
-    val read: Stream[Throwable, Byte] =
+    val read: Stream[IOException, Byte] =
       ZStream.unfoldChunkM(0) {
         case -1 => ZIO.succeed(Option.empty)
         case _ =>
           val buff = ByteBuffer.allocate(ZStream.DefaultChunkSize)
 
-          IO.effectAsync[Throwable, Option[(Chunk[Byte], Int)]] { callback =>
+          IO.effectAsync[IOException, Option[(Chunk[Byte], Int)]] { callback =>
             socket.read(
               buff,
               null,
@@ -93,11 +97,11 @@ object TCP {
 
                 override def failed(error: Throwable, attachment: Void): Unit = error match {
                   case _: ClosedChannelException => callback(ZIO.succeed(Option.empty))
-                  case _ => callback(ZIO.fail(error))
+                  case _ => callback(ZIO.fail(error).refineToOrDie[IOException])
                 }
               }
             )
-          }
+          }.refineToOrDie[IOException]
       }
 
     /**
@@ -105,11 +109,11 @@ object TCP {
      *
      * The sink will yield the count of bytes written.
      */
-    val write: Sink[Throwable, Byte, Nothing, Int] =
+    val write: Sink[IOException, Byte, Nothing, Int] =
       ZSink.foldLeftChunksM(0) {
         case (nbBytesWritten, c) => {
           val buffer = ByteBuffer.wrap(c.toArray)
-          IO.effectAsync[Throwable, Int] { callback =>
+          IO.effectAsync[IOException, Int] { callback =>
             var totalWritten = 0
             socket.write(
               buffer,
@@ -125,7 +129,7 @@ object TCP {
 
                 override def failed(error: Throwable, attachment: ByteBuffer): Unit = error match {
                   case _: ClosedChannelException => callback(ZIO.succeed(0))
-                  case _ => callback(ZIO.fail(error))
+                  case _ => callback(ZIO.fail(error).refineToOrDie[IOException])
                 }
               }
             )
@@ -136,12 +140,13 @@ object TCP {
     /**
      * Close the underlying socket
      */
-    def close(): UIO[Unit] = ZIO.effectTotal(socket.close())
+    def close(): UIO[Unit] = ZIO.effectTotal(Try(socket.close()))
 
     /**
      * Close only the write, so the remote end will see EOF
      */
-    def closeWrite(): UIO[Unit] = ZIO.effectTotal(socket.shutdownOutput()).unit
+    def closeWrite():IO[IOException,Unit] = ZIO.effect(socket.shutdownOutput()).unit.refineToOrDie[IOException]
+
   }
 
 
@@ -151,22 +156,24 @@ object TCP {
   final def fromSocketClient(
                               port: Int,
                               host: String,
-                              bind: Option[String] = None
-                            ): ZIO[Blocking, Throwable, Channel] = for {
+                              bind: Option[String] = None,
+                              noDelay: Boolean = false
+                            ): ZIO[Blocking, IOException, Channel] = for {
     address <- effectBlockingIO(new InetSocketAddress(host, port))
     bound <- effectBlockingIO(bind.map(h => new InetSocketAddress(h, 0)))
-    conn <- fromSocketClient(address, bound)
+    conn <- fromSocketAddressClient(address, bound, noDelay)
   } yield conn
 
-  final def fromSocketClient(
-                              address: SocketAddress,
-                              bind: Option[SocketAddress]
-                            ): ZIO[Blocking, Throwable, Channel] =
+  final def fromSocketAddressClient(
+                                     address: SocketAddress,
+                                     bind: Option[SocketAddress] = None,
+                                     noDelay: Boolean = false
+                                   ): ZIO[Blocking, IOException, Channel] =
     for {
-      socket <- effectBlockingIO(AsynchronousSocketChannel.open().bind(bind.getOrElse(null)))
+      socket <- effectBlockingIO(AsynchronousSocketChannel.open().bind(bind.getOrElse(null)).setOption(StandardSocketOptions.TCP_NODELAY, noDelay.asInstanceOf[java.lang.Boolean]))
 
       conn <-
-        IO.effectAsync[Throwable, Channel] { callback =>
+        IO.effectAsync[IOException, Channel] { callback =>
           socket.connect(
             address,
             socket,
@@ -176,7 +183,7 @@ object TCP {
                 callback(ZIO.succeed(new Channel(attachment)))
 
               override def failed(exc: Throwable, attachment: AsynchronousSocketChannel): Unit =
-                callback(ZIO.fail(exc))
+                callback(ZIO.fail(exc).refineToOrDie[IOException])
             }
           )
         }
@@ -191,8 +198,8 @@ object TCP {
    * The mapping is determined by the client remote address
    */
   final def handlerServer(
-                           f: SocketAddress => Stream[Throwable, Byte] => Stream[Throwable, Byte]
-                         )(c: Channel): ZIO[Blocking, Throwable, Unit] =
+                           f: SocketAddress => Stream[IOException, Byte] => Stream[IOException, Byte]
+                         )(c: Channel): ZIO[Blocking, IOException, Unit] =
     (for {
       remote <- c.remoteAddress
       _ <- f(remote)(c.read).run(c.write)
@@ -205,8 +212,8 @@ object TCP {
    * The mapping is determined by the client remote address
    */
   final def handlerServerM(
-                            f: SocketAddress => Stream[Throwable, Byte] => IO[Throwable, Stream[Throwable, Byte]]
-                          )(c: Channel): ZIO[Blocking, Throwable, Unit] =
+                            f: SocketAddress => Stream[IOException, Byte] => IO[IOException, Stream[IOException, Byte]]
+                          )(c: Channel): ZIO[Blocking, IOException, Unit] =
     (for {
       remote <- c.remoteAddress
       end <- f(remote)(c.read)
@@ -223,10 +230,10 @@ object TCP {
    */
   final def bidiServer(
                         f: SocketAddress => (
-                          Stream[Throwable, Byte] => ZIO[Any, Throwable, Unit],
-                            Sink[Throwable, Byte, Throwable, Int] => ZIO[Any, Throwable, Unit]
+                          Stream[IOException, Byte] => ZIO[Any, IOException, Unit],
+                            Sink[IOException, Byte, IOException, Int] => ZIO[Any, IOException, Unit]
                           )
-                      )(c: Channel): ZIO[Any, Throwable, Unit] = for {
+                      )(c: Channel): ZIO[Any, IOException, Unit] = for {
     remote <- c.remoteAddress
     (up, down) = f(remote)
     result <- bidi(up, down)(c)
@@ -240,9 +247,9 @@ object TCP {
    * Socket is closed when both streams complete
    */
   final def bidi(
-                  request: Stream[Throwable, Byte] => ZIO[Any, Throwable, Unit],
-                  response: Sink[Throwable, Byte, Throwable, Int] => ZIO[Any, Throwable, Unit]
-                )(c: Channel): ZIO[Any, Throwable, Unit] = (for {
+                  request: Stream[IOException, Byte] => ZIO[Any, IOException, Unit],
+                  response: Sink[IOException, Byte, IOException, Int] => ZIO[Any, IOException, Unit]
+                )(c: Channel): ZIO[Any, IOException, Unit] = (for {
     forked <- response(c.write).fork
     _ <- request(c.read)
     _ <- forked.await
@@ -256,7 +263,7 @@ object TCP {
    *
    * Corresponds to HTTP 1.0 interaction.
    */
-  final def requestChunk(request: Chunk[Byte])(c: Channel): ZIO[Blocking, Throwable, Chunk[Byte]] =
+  final def requestChunk(request: Chunk[Byte])(c: Channel): ZIO[Blocking, IOException, Chunk[Byte]] =
     (for {
       _ <- (ZStream.fromChunk(request).run(c.write) *> c.closeWrite()).fork
       response <- c.read.runCollect
@@ -267,7 +274,7 @@ object TCP {
    *
    * Corresponds to Server Sent Event
    */
-  final def requestStream(request: Chunk[Byte])(c: Channel): ZIO[Any, Nothing, ZStream[Any, Throwable, Byte]] = for {
+  final def requestStream(request: Chunk[Byte])(c: Channel): ZIO[Any, Nothing, ZStream[Any, IOException, Byte]] = for {
     _ <- (ZStream.fromChunk(request).run(c.write) *> c.closeWrite()).fork
   } yield c.read.ensuring(c.close())
 
