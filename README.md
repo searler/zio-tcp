@@ -21,13 +21,12 @@ Supporting functionality:
 ZIO has an implementation for a TCP 
 [server](https://javadoc.io/static/dev.zio/zio-streams_2.12/1.0.9/zio/stream/ZStream$.html#fromSocketServer(port:Int,host:Option[String]):zio.stream.ZStream[zio.blocking.Blocking,Throwable,ZStreamPlatformSpecificConstructors.this.Connection]), 
 that is currently incomplete and has life cycle management that is not suitable for a long lived server instance. There
-is a no client implementation
+is no client implementation.
  
 
 ## Documentation
 
 ### Examples
-
 
 Echo server 
 ```scala
