@@ -1,7 +1,7 @@
 
 
 
-scalaVersion := "2.13.1"
+scalaVersion := "2.13.7"
 
 
 name := "zio-tcp"
@@ -10,7 +10,7 @@ version := "0.2.1-SNAPSHOT"
 
 
 
-val zio_version ="1.0.10"
+val zio_version ="1.0.12"
 
 libraryDependencies += "dev.zio" %% "zio" % zio_version
 libraryDependencies += "dev.zio" %% "zio-streams" % zio_version
