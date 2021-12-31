@@ -217,13 +217,13 @@ object TCPSpec extends ZIOSpecDefault {
           hub <- ZHub.unbounded[String]
 
           server <- runServer(6887, TCP.handlerServer(chat(hub)))
-          managed = ZStream.fromHubManaged(hub).tapZIO(_ => promise.succeed(()))
+          managed = ZStream.fromHubManaged(hub).tapZIO((_: ZStream[Any, Nothing, String]) => promise.succeed(()))
           recorderStream = ZStream.unwrapManaged(managed)
           recorder <- recorderStream.runCollect.fork
           _ <- promise.await
 
           messages: Seq[String] <- Gen.alphaNumericString.filter(_.nonEmpty).runCollect
-          _ <- ZIO.foreach(messages) { message =>
+          _ <- ZIO.foreachDiscard(messages) { message =>
             for {
               connEcho <- TCP.fromSocketClient(6887, "localhost").retry(Schedule.forever)
               echoAddress <- connEcho.localAddress
