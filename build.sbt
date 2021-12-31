@@ -10,7 +10,7 @@ version := "0.2.1-SNAPSHOT"
 
 
 
-val zio_version ="1.0.12"
+val zio_version ="2.0.0-RC1"
 
 libraryDependencies += "dev.zio" %% "zio" % zio_version
 libraryDependencies += "dev.zio" %% "zio-streams" % zio_version

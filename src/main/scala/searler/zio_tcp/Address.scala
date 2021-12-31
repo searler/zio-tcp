@@ -1,11 +1,12 @@
 package searler.zio_tcp
 
 import zio.ZIO
-import zio.blocking.{Blocking, effectBlocking, effectBlockingIO}
+
 import zio.stream.ZStream
 
 import java.io.IOException
 import java.net.InetAddress
+import zio.ZIO._
 
 /**
  * Module providing functionality related to InetAddress
@@ -21,12 +22,12 @@ object Address {
    * @param parallelism number of concurrent lookups
    * @return Map(hostname->address
    */
-  def byName(names: Set[String], parallelism: Int = 1): ZIO[Blocking, Nothing, Map[String, InetAddress]] = for {
-    mapping <- ZStream.fromIterable(names).mapMPar(parallelism)(name =>
-      effectBlockingIO(name -> InetAddress.getByName(name)).either).
+  def byName(names: Set[String], parallelism: Int = 1): ZIO[Any, Nothing, Map[String, InetAddress]] = for {
+    mapping <- ZStream.fromIterable(names).mapZIOPar(parallelism)(name =>
+      attemptBlockingIO(name -> InetAddress.getByName(name)).either).
       collectRight.runCollect
   } yield mapping.iterator.toMap
 
-  val localhost: ZIO[Blocking, IOException, InetAddress] = effectBlockingIO(InetAddress.getLocalHost)
+  val localhost: ZIO[Any, IOException, InetAddress] = attemptBlockingIO(InetAddress.getLocalHost)
 
 }
