@@ -213,7 +213,7 @@ object TCP {
    *
    * The mapping is determined by the client remote address
    */
-  final def handlerServerM(
+  final def handlerServerZIO(
                             f: SocketAddress => Stream[IOException, Byte] => IO[IOException, Stream[IOException, Byte]]
                           )(c: Channel): ZIO[Any, IOException, Unit] =
     (for {

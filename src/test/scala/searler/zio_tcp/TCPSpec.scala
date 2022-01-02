@@ -71,7 +71,7 @@ object TCPSpec extends ZIOSpecDefault {
         for {
           _ <- runServer(
             6867,
-            TCP.handlerServerM(_ =>
+            TCP.handlerServerZIO(_ =>
               _.runCollect.map(_.size).map(length => ZStream.fromIterable(s"length: $length".getBytes()))
             )
           )
@@ -94,7 +94,7 @@ object TCPSpec extends ZIOSpecDefault {
           server <-
             runServer(
               6877,
-              TCP.handlerServerM(_ => _.runDrain.flatMap(_ => ZIO.succeed(ZStream.fromIterable(("Fixed").getBytes()))))
+              TCP.handlerServerZIO(_ => _.runDrain.flatMap(_ => ZIO.succeed(ZStream.fromIterable(("Fixed").getBytes()))))
             )
 
           receive <- requestChunk(6877, "message")
