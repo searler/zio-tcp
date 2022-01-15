@@ -92,3 +92,4 @@ The code was identical, modulo module name so there is no naming conflict.
 The implementation has since been improved and additional functionality has been provided.
 
 
+Copyright 2021 Richard Searle. All rights reserved.
