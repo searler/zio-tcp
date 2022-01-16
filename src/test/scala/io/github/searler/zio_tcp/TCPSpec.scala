@@ -1,6 +1,6 @@
-package searler.zio_tcp
+package io.github.searler.zio_tcp
 
-import searler.zio_tcp.TCP._
+import TCP._
 import zio.blocking.{Blocking, effectBlockingIO}
 import zio.duration._
 import zio.stream.{Stream, Transducer, ZSink, ZStream, ZTransducer}

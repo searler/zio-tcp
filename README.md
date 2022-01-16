@@ -30,7 +30,7 @@ is no client implementation.
 
 Echo server 
 ```scala
-import searler.zio_tcp.TCP
+import io.github.searler.zio_tcp.TCP
 import zio._
 
 object ServerExample extends App {
@@ -53,7 +53,7 @@ object ServerExample extends App {
 Client that makes a fixed request
 
 ```scala
-import searler.zio_tcp.TCP
+import io.github.searler.zio_tcp.TCP
 import zio._
 
 object ClientExample extends App {

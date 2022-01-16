@@ -1,4 +1,4 @@
-package searler.zio_tcp
+package io.github.searler.zio_tcp
 
 import zio.blocking.{Blocking, effectBlocking, effectBlockingIO}
 import zio.stream.{Sink, Stream, ZSink, ZStream}
