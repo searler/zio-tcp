@@ -4,7 +4,7 @@ scalaVersion := "2.13.7"
 
 name := "zio-tcp"
 organization := "io.github.searler"
-version := "0.3.1-SNAPSHOT"
+version := "0.3.1"
 
 val zio_version ="2.0.0-RC1"
 
