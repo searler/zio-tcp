@@ -1,8 +1,7 @@
-package searler.zio_tcp
+package io.github.searler.zio_tcp
 
-import searler.zio_tcp.TCP._
-
-
+import io.github.searler.zio_tcp.TCP.Channel
+import TCP._
 import zio.stream.{Stream, ZPipeline, ZSink, ZStream}
 import zio.test.Assertion.equalTo
 import zio.test._
@@ -13,7 +12,7 @@ import java.net.{InetSocketAddress, SocketAddress}
 import scala.util.Try
 import zio._
 import zio.ZIO.attemptBlockingIO
-import zio.test.{ Live, ZIOSpecDefault }
+import zio.test.{Live, ZIOSpecDefault}
 
 /**
  * Contains interesting examples of how the API can be applied

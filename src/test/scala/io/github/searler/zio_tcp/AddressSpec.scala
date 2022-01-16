@@ -1,5 +1,4 @@
-package searler.zio_tcp
-
+package io.github.searler.zio_tcp
 
 import zio.test.Assertion.{equalTo, isEmpty}
 import zio.test._

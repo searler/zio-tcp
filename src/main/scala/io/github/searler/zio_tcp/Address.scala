@@ -1,4 +1,4 @@
-package searler.zio_tcp
+package io.github.searler.zio_tcp
 
 import zio.ZIO
 

@@ -1,5 +1,4 @@
-package searler.zio_tcp
-
+package io.github.searler.zio_tcp
 
 import zio.stream.{Sink, Stream, ZSink, ZStream}
 import zio.{Chunk, IO, UIO, ZIO, ZManaged}
